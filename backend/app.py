@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
 import pypdf
+import ai_features
 
 app = FastAPI(
     title="Flame in Freefall - NASA Space Apps Engine",
@@ -281,8 +282,39 @@ def rag_query(payload: dict):
             "citations": []
         }
 
+    llm_answer = ai_features.generate_answer(question, top_matches)
+    if llm_answer:
+        return {
+            "question": question,
+            "answer": llm_answer,
+            "answer_source": "llm",
+            "citations": top_matches
+        }
     return {
         "question": question,
         "answer": f"Found {len(top_matches)} relevant passages across NASA NTRS technical reports:",
+        "answer_source": "keyword_search",
         "citations": top_matches
     }
+
+
+@app.post("/api/predict/flex")
+def predict_flex(payload: dict):
+    try:
+        return ai_features.predict_flex(
+            fuel=payload["fuel"],
+            o2_pct=float(payload["o2_pct"]),
+            pressure_atm=float(payload["pressure_atm"]),
+            d0_mm=float(payload["d0_mm"]),
+            x_he=float(payload.get("x_he", 0.0)),
+            x_co2=float(payload.get("x_co2", 0.0)),
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Missing field: {e}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Numeric fields must be numbers")
+
+
+@app.get("/api/predict/flex/metrics")
+def predict_flex_metrics():
+    return ai_features.flex_metrics()

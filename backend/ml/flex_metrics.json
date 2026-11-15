@@ -1,0 +1,40 @@
+{
+  "n_rows": 260,
+  "cv": "GroupKFold(5) by test day",
+  "classifier": {
+    "positive_rate": 0.6846153846153846,
+    "baseline_majority": {
+      "roc_auc": 0.43587284187448616,
+      "accuracy": 0.6846153846153846
+    },
+    "logistic": {
+      "roc_auc": 0.8707865168539325,
+      "accuracy": 0.8115384615384615
+    },
+    "random_forest": {
+      "roc_auc": 0.8598246094820499,
+      "accuracy": 0.8346153846153846
+    }
+  },
+  "regressor_burn_rate": {
+    "n_rows": 255,
+    "target_std": 0.1350495316882929,
+    "baseline_mean": {
+      "mae": 0.10767704728950404,
+      "r2": -0.04060528163741073
+    },
+    "random_forest": {
+      "mae": 0.055381245928416964,
+      "r2": 0.6123723127400817
+    }
+  },
+  "classifier_feature_importance": {
+    "x_o2_pct": 0.377,
+    "d0_mm": 0.217,
+    "pressure_atm": 0.175,
+    "x_co2_probable": 0.084,
+    "fuel_Methanol": 0.054,
+    "fuel_Heptane": 0.053,
+    "x_he": 0.04
+  }
+}
