@@ -1,232 +1,220 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { getEnvironments, getExperiments, getRanking, askQuestion } from './api';
-import { mergeExperiments, SERIES_COLORS } from './utils';
+import { useEffect, useMemo, useState } from 'react';
+import { API_BASE, getEnvironments, getExperiments, getRanking } from './api';
+import { PILLAR_STYLE, SERIES_COLORS, mergeExperiments } from './utils';
+import GravityStrip from './components/GravityStrip';
+import CoverageChart from './components/CoverageChart';
 import ExperimentCard from './components/ExperimentCard';
 import CompareView from './components/CompareView';
-import CoverageChart from './components/CoverageChart';
-import GravityStrip from './components/GravityStrip';
-import './App.css';
-import './index.css';
+import AskView from './components/AskView';
+
+const TABS = [
+  { id: 'rank', label: 'Rank experiments' },
+  { id: 'compare', label: 'Compare' },
+  { id: 'ask', label: 'Ask the sources' },
+];
+
+function Header({ tab, onTab, compareCount }) {
+  return (
+    <>
+      <header className="topbar">
+        <div className="brand">
+          <span className="flame" aria-hidden="true">🔥</span>
+          <div>
+            <h1>Flame in Freefall</h1>
+            <p>NASA microgravity combustion research, ranked for the spacecraft you are designing</p>
+          </div>
+        </div>
+        <nav className="tabs" aria-label="Sections">
+          {TABS.map((t) => (
+            <button key={t.id} type="button" className={`tab ${tab === t.id ? 'tab-on' : ''}`}
+              onClick={() => onTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>
+              {t.label}{t.id === 'compare' && compareCount > 0 ? ` (${compareCount})` : ''}
+            </button>
+          ))}
+        </nav>
+      </header>
+      <p className="disclaimer">
+        Decision support only. It does not replace flight-rated testing or NASA-STD-6001 requirements.
+        Every number links back to a NASA source; check the source before relying on it.
+      </p>
+    </>
+  );
+}
+
+function TargetPanel({ env }) {
+  return (
+    <div>
+      <div className="targets">
+        <span className="chip">Target O₂ <strong>{env.target_o2}%</strong></span>
+        <span className="chip">Pressure <strong>{env.target_psi} psi</strong></span>
+        <span className="chip">Airflow <strong>{env.target_airflow_cm_s} cm/s</strong></span>
+        <span className="chip">Gravity <strong>{env.gravity_g} g</strong></span>
+        {(env.priority_pillars || []).map((p) => (
+          <span key={p} className="chip">
+            <span className="chip-dot" style={{ background: PILLAR_STYLE[p]?.color || '#888' }} />
+            Priority: {p}
+          </span>
+        ))}
+      </div>
+      <p className="targets-note">
+        These targets are the ranking engine's configured assumptions for this environment (ENVIRONMENTS in app.py).
+      </p>
+    </div>
+  );
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('ranking');
+  const [tab, setTab] = useState('rank');
   const [environments, setEnvironments] = useState([]);
-  const [selectedEnvId, setSelectedEnvId] = useState('lunar_base');
-  const [rawExperiments, setRawExperiments] = useState([]);
-  const [rankingResult, setRankingResult] = useState(null);
+  const [experiments, setExperiments] = useState([]);
+  const [envId, setEnvId] = useState(null);
+  const [ranking, setRanking] = useState(null);
+  const [rankError, setRankError] = useState(null); // { envId, message }
+  const [bootError, setBootError] = useState(null);
   const [compareIds, setCompareIds] = useState([]);
-  
-  // RAG State
-  const [question, setQuestion] = useState('');
-  const [ragData, setRagData] = useState(null);
-  const [ragLoading, setRagLoading] = useState(false);
 
   useEffect(() => {
-    getEnvironments().then(setEnvironments).catch(console.error);
-    getExperiments().then(setRawExperiments).catch(console.error);
+    let cancelled = false;
+    Promise.all([getEnvironments(), getExperiments()])
+      .then(([envs, exps]) => {
+        if (cancelled) return;
+        setEnvironments(envs);
+        setExperiments(exps);
+        setEnvId(envs.some((e) => e.id === 'lunar_base') ? 'lunar_base' : envs[0]?.id ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) setBootError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (selectedEnvId) {
-      getRanking(selectedEnvId)
-        .then((res) => {
-          const mergedResults = mergeExperiments(res.results, rawExperiments);
-          setRankingResult({ ...res, results: mergedResults });
-        })
-        .catch(console.error);
-    }
-  }, [selectedEnvId, rawExperiments]);
+    if (!envId) return undefined;
+    let cancelled = false;
+    getRanking(envId)
+      .then((data) => {
+        if (!cancelled) setRanking(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setRankError({ envId, message: err.message });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [envId]);
 
-  const currentEnv = environments.find((e) => e.id === selectedEnvId) || environments[0];
+  const env = useMemo(() => environments.find((e) => e.id === envId) || null, [environments, envId]);
+  const ready = !!ranking && ranking.environment?.id === envId;
+  const currentError = rankError && rankError.envId === envId ? rankError.message : null;
+  const loading = !!envId && !ready && !currentError;
 
-  const colorMap = useMemo(() => {
-    const map = {};
-    rawExperiments.forEach((e, i) => {
-      map[e.id] = SERIES_COLORS[i % SERIES_COLORS.length];
-    });
-    return map;
-  }, [rawExperiments]);
+  const merged = useMemo(
+    () => (ready ? mergeExperiments(ranking.results, experiments) : []),
+    [ready, ranking, experiments]
+  );
+  const colors = useMemo(
+    () => Object.fromEntries(experiments.map((e, i) => [e.id, SERIES_COLORS[i % SERIES_COLORS.length]])),
+    [experiments]
+  );
+  const comparable = merged.length ? merged : experiments;
 
-  const handleToggleCompare = (id) => {
-    setCompareIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 3 ? [...prev, id] : prev
+  const toggleCompare = (id) =>
+    setCompareIds((ids) =>
+      ids.includes(id) ? ids.filter((x) => x !== id) : ids.length >= 3 ? ids : [...ids, id]
     );
-  };
 
-  const handleRagSearch = async (e) => {
-    e.preventDefault();
-    if (!question.trim()) return;
-    setRagLoading(true);
-    try {
-      const res = await askQuestion(question);
-      setRagData(res);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setRagLoading(false);
-    }
-  };
+  if (bootError) {
+    return (
+      <div className="app">
+        <Header tab={tab} onTab={setTab} compareCount={0} />
+        <div className="error-box">
+          <h2>Cannot load data from the backend</h2>
+          <p>{bootError}</p>
+          <p>
+            Start it with <code>cd backend</code> then <code>uvicorn app:app --reload</code>. The frontend
+            is calling <code>{API_BASE}</code> (change it with <code>VITE_API_URL</code> in frontend/.env).
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="layout">
-      <header className="header">
-        <h1>🔥 Flame in Freefall</h1>
-        <p>NASA Space Apps Challenge — Deterministic Combustion Safety & Habitat Engine</p>
-      </header>
+    <div className="app">
+      <Header tab={tab} onTab={setTab} compareCount={compareIds.length} />
 
-      <nav className="tabs" role="tablist">
-        <button role="tab" aria-selected={activeTab === 'ranking'} onClick={() => setActiveTab('ranking')} className={activeTab === 'ranking' ? 'tab-active' : ''}>
-          1. Habitat Ranking & Gravity
-        </button>
-        <button role="tab" aria-selected={activeTab === 'catalog'} onClick={() => setActiveTab('catalog')} className={activeTab === 'catalog' ? 'tab-active' : ''}>
-          2. Experiment Catalog
-        </button>
-        <button role="tab" aria-selected={activeTab === 'compare'} onClick={() => setActiveTab('compare')} className={activeTab === 'compare' ? 'tab-active' : ''}>
-          3. Side-by-Side Comparison {compareIds.length > 0 && `(${compareIds.length})`}
-        </button>
-        <button role="tab" aria-selected={activeTab === 'rag'} onClick={() => setActiveTab('rag')} className={activeTab === 'rag' ? 'tab-active' : ''}>
-          4. NTRS RAG Assistant
-        </button>
-        <button role="tab" aria-selected={activeTab === 'earth'} onClick={() => setActiveTab('earth')} className={activeTab === 'earth' ? 'tab-active' : ''}>
-          5. Earth Applications
-        </button>
-      </nav>
-
-      <main className="main">
-        {activeTab === 'ranking' && (
-          <div className="space-y">
-            <section className="panel">
-              <h2>Select Target Habitat Environment</h2>
-              <div className="env-btns">
-                {environments.map((env) => (
-                  <button
-                    key={env.id}
-                    type="button"
-                    className={`env-btn ${selectedEnvId === env.id ? 'env-active' : ''}`}
-                    onClick={() => setSelectedEnvId(env.id)}
-                  >
-                    <strong>{env.name}</strong>
-                    <span>O₂: {env.target_o2}% | {env.target_psi} psi</span>
+      {tab === 'rank' && (
+        <section>
+          {environments.length === 0 ? (
+            <p className="loading">Loading environments…</p>
+          ) : (
+            <>
+              <h2 className="section-title">1. Choose the environment you are designing for</h2>
+              <div className="env-grid" role="group" aria-label="Environment">
+                {environments.map((e) => (
+                  <button key={e.id} type="button" className={`env ${e.id === envId ? 'env-on' : ''}`}
+                    onClick={() => setEnvId(e.id)} aria-pressed={e.id === envId}>
+                    <strong>{e.name}</strong>
+                    <span>{e.target_o2}% O₂ · {e.target_psi} psi · {e.gravity_g} g</span>
                   </button>
                 ))}
               </div>
-              {currentEnv && <GravityStrip gravity={currentEnv.gravity_g} />}
-            </section>
 
-            {rankingResult && (
-              <section className="panel">
-                <h2>Ignition & Flammability Coverage Chart</h2>
-                <p className="muted">Comparing tested experiment conditions against your target habitat envelope.</p>
-                <CoverageChart experiments={rankingResult.results} env={rankingResult.environment} colors={colorMap} />
-              </section>
-            )}
+              {env && <TargetPanel env={env} />}
+              {env && <GravityStrip gravity={env.gravity_g} />}
 
-            <section>
-              <h2>Ranked Experiments for {currentEnv?.name}</h2>
-              <p className="muted">Transparent rule-based scoring calculated strictly from verified NASA parameters.</p>
-              
-              <div className="cards-grid">
-                {rankingResult?.results.map((exp, idx) => (
-                  <ExperimentCard
-                    key={exp.id}
-                    exp={exp}
-                    rank={idx + 1}
-                    env={rankingResult.environment}
-                    color={colorMap[exp.id]}
-                    inCompare={compareIds.includes(exp.id)}
-                    compareFull={compareIds.length >= 3}
-                    onToggleCompare={handleToggleCompare}
-                  />
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
+              {currentError && (
+                <div className="error-box" style={{ marginTop: 16 }}>
+                  <p>{currentError}</p>
+                </div>
+              )}
+              {loading && <p className="loading">Ranking experiments…</p>}
 
-        {activeTab === 'catalog' && (
-          <div className="space-y">
-            <h2>Complete Experiment Catalog</h2>
-            <p className="muted">All structured NASA microgravity combustion test campaigns mapped in the repository.</p>
-            <div className="cards-grid">
-              {rawExperiments.map((exp, idx) => (
-                <ExperimentCard
-                  key={exp.id}
-                  exp={exp}
-                  rank={idx + 1}
-                  env={currentEnv}
-                  color={colorMap[exp.id]}
-                  inCompare={compareIds.includes(exp.id)}
-                  compareFull={compareIds.length >= 3}
-                  onToggleCompare={handleToggleCompare}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'compare' && (
-          <CompareView
-            experiments={rawExperiments}
-            ids={compareIds}
-            onChange={setCompareIds}
-            envName={currentEnv?.name}
-          />
-        )}
-
-        {activeTab === 'rag' && (
-          <div className="panel">
-            <h2>NTRS Technical Document RAG Assistant</h2>
-            <p className="muted">Query local NASA technical reports indexed from <code>nasa_docs/</code> with exact page and file citations.</p>
-            
-            <form onSubmit={handleRagSearch} className="rag-form">
-              <input
-                type="text"
-                placeholder="Ask about oxygen flammability, Saffire sensors, droplet extinction..."
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-              />
-              <button type="submit" className="btn btn-primary" disabled={ragLoading}>
-                {ragLoading ? 'Searching PDFs...' : 'Search NTRS Docs'}
-              </button>
-            </form>
-
-            {ragData && (
-              <div className="rag-response">
-                <h3>Query: "{ragData.question}"</h3>
-                <p>{ragData.answer}</p>
-                {ragData.citations?.map((c, i) => (
-                  <div key={i} className="citation-box">
-                    <strong>📄 {c.source_file} (Page {c.page_number})</strong>
-                    <p>{c.excerpt}</p>
+              {ready && env && (
+                <>
+                  <h2 className="section-title">2. Where the tested conditions sit relative to your target</h2>
+                  <div className="panel">
+                    <CoverageChart experiments={merged} env={env} colors={colors} />
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
-        {activeTab === 'earth' && (
-          <div className="space-y">
-            <h2>Terrestrial Spin-off Applications</h2>
-            <p className="muted">Translating microgravity combustion physics into practical life-saving Earth technologies.</p>
-            
-            <div className="cards-grid">
-              <article className="card">
-                <h3>💧 Fine Water Mist Suppression</h3>
-                <p>Derived from FLEX droplet combustion studies. Optimizes droplet atomization to suppress enclosed structural fires efficiently with minimal collateral water damage.</p>
-              </article>
-              <article className="card">
-                <h3>🚨 Advanced Multi-Moment Smoke Detectors</h3>
-                <p>Inspired by SAME aerosol experiments. Combines condensation nuclei counters and multi-angle optical scattering to eliminate nuisance dust and steam false alarms.</p>
-              </article>
-              <article className="card">
-                <h3>🚒 High-Performance Firefighter Gear</h3>
-                <p>Leverages flammability limit metrics from Saffire and BASS-II solid material tests to engineer superior thermal protective fabrics for extreme environments.</p>
-              </article>
-            </div>
-          </div>
-        )}
-      </main>
+                  <h2 className="section-title">3. Experiments ranked for {env.name}</h2>
+                  <div className="cards">
+                    {merged.map((exp, i) => (
+                      <ExperimentCard key={exp.id} exp={exp} rank={i + 1} env={env} color={colors[exp.id]}
+                        inCompare={compareIds.includes(exp.id)} compareFull={compareIds.length >= 3}
+                        onToggleCompare={toggleCompare} />
+                    ))}
+                  </div>
+
+                  <details className="how">
+                    <summary>How the score works</summary>
+                    <p>
+                      Each experiment gets up to 100 points: oxygen match up to 35, pressure up to 30,
+                      airflow up to 15, safety pillars up to 15 and solid-fuel relevance 5. The score
+                      compares condition ranges, so a high score does not mean a single test ran at your
+                      target. Use “Nearest test actually run” on each card, and the chart, to see what was
+                      really tested.
+                    </p>
+                  </details>
+                </>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      {tab === 'compare' && (
+        <CompareView experiments={comparable} ids={compareIds} onChange={setCompareIds} envName={env?.name} />
+      )}
+
+      {tab === 'ask' && <AskView />}
+
+      <p className="footer">
+        Sources: NASA NTRS reports and PSI tables listed on each experiment. All experiments ran in
+        microgravity; no partial-gravity combustion data exists in PSI yet.
+      </p>
     </div>
   );
 }
