@@ -1,84 +1,77 @@
-# Flame in Freefall — DynamicDuo
+Flame in Freefall
+NASA Space Apps Challenge 2026
+Challenge: Flame in Freefall — SI-Powered Fire Safety Insights from Microgravity Combustion Data
 
-**NASA Space Apps Challenge 2026**  
-**Challenge:** Flame in Freefall — SI-Powered Fire Safety Insights from Microgravity Combustion Data
+Interactive web dashboard that helps researchers and engineers quickly find, rank, compare, and interpret NASA’s microgravity combustion experiments for real crew environments (Lunar Base, Pressurized Rover, ISS, and deep-space capsules).
 
-Interactive dashboard that ranks NASA microgravity combustion investigations (BASS-II, Saffire, FLEX, ACME, SAME, DAFT, SPICE…) against the fire-safety needs of real crew environments (Lunar Base, Pressurized Rover, ISS, Orion).
+What the Website Does
+The dashboard has four main sections:
 
-It also includes:
-- Side-by-side comparison of experiments
-- Source-grounded Q&A over NASA NTRS PDFs (keyword + optional Claude)
-- Machine-learning prediction of droplet extinction and burn rate from cleaned FLEX (PSI-69) data
+1. Rank Experiments
+Choose a target environment (Lunar Base, Pressurized Rover, ISS, or Orion).
+The system scores NASA investigations (BASS-II, Saffire, FLEX, ACME, SAME, SPICE, DAFT, etc.) based on how well their tested conditions match the environment.
+Scoring considers:
+Oxygen concentration
+Cabin pressure
+Airflow
+Safety pillars (Prevention, Detection, Suppression)
+Fuel type (solid materials get extra relevance)
+Each experiment shows a score, breakdown, key findings, sensors, and hardware.
+2. Compare
+Select up to 3 experiments.
+View them side-by-side.
+The table automatically marks what is the same and what differs (objectives, fuels, conditions, sensors, etc.).
+3. Ask the Sources
+Search the indexed NASA NTRS PDF reports.
+Returns matching passages with file name and page number.
+Builds a clear local summary from the excerpts (no external API required).
+If an Anthropic API key is added later, it can optionally generate a cited answer.
+4. Predict (FLEX)
+Machine-learning model trained on 260 real FLEX (PSI-69) droplet tests.
+Input: fuel type, oxygen %, pressure, droplet diameter, and optional diluents.
+Output: extinction probability and predicted burn rate.
+Includes model metrics and validity range.
+Data Sources
+Cleaned experimental tables from NASA Physical Science Informatics (PSI):
+BASS-II (PSI-25)
+FLEX (PSI-69)
+Cool Flames Investigation (CFI)
+Flame Design
+Curated metadata in backend/data/experiments.json (objectives, conditions, findings, sensors, NTRS references).
+Local NASA NTRS PDF reports in backend/nasa_docs/ used by the search feature.
+All rankings, comparisons, and predictions are derived from these public NASA sources. Every result links back to the original data or document.
 
-**Decision support only.** Does not replace NASA-STD-6001 testing or flight certification.
-
-## Features
-
-| Tab | What it does |
-|-----|--------------|
-| **Rank experiments** | Scores investigations against a chosen environment (O₂, pressure, airflow, safety pillars) |
-| **Compare** | Side-by-side table of up to 3 experiments with same/diff highlighting |
-| **Ask the sources** | Search + (optional) cited answers from indexed NASA PDFs |
-| **Predict (FLEX)** | ML model trained on 260 real FLEX tests → extinction probability + burn rate |
-
-## Quick start
-
-### Backend
-```bash
+Technology
+Part	Technology
+Frontend	React + Vite
+Backend	FastAPI
+ML Model	scikit-learn (trained on FLEX data)
+Data	NASA PSI + NTRS
+How to Run Locally
+Backend
 cd backend
 pip install -r requirements.txt
-# optional — enables Claude answers
-export ANTHROPIC_API_KEY=sk-ant-...
-uvicorn app:app --reload --port 8000
-```
-
-### Frontend
-```bash
+python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
+Frontend
 cd frontend
 npm install
-# optional
-echo "VITE_API_URL=http://localhost:8000" > .env
 npm run dev
-```
-
 Open http://localhost:5173
 
-## Data sources
+The frontend connects to http://localhost:8000 by default.
+To point it to a deployed backend, set VITE_API_URL in a .env file or in your hosting environment variables.
 
-- NASA Physical Science Informatics (PSI) cleaned tables: BASS-II (PSI-25), FLEX (PSI-69), CFI, Flame Design
-- Curated experiment metadata in `backend/data/experiments.json` (objectives, conditions, sensors, findings, NTRS refs)
-- Local NASA PDFs in `backend/nasa_docs/` (used by the RAG endpoint)
+Deployment Notes
+Frontend can be deployed on Netlify, Vercel, or GitHub Pages.
+Backend can be deployed on Railway, Render, or similar.
+After deploying the backend, set VITE_API_URL in the frontend hosting settings to the backend URL.
+Important Disclaimer
+This is an independent project created for the NASA Space Apps Challenge 2026.
+It is not affiliated with, endorsed by, or a product of NASA.
 
-All ranking scores and predictions are derived from these public NASA sources. Every card and citation links back to the original document.
+Rankings and predictions are decision-support tools only. They do not replace official testing, NASA-STD-6001 requirements, or flight certification.
 
-## Environment targets (configured in `backend/app.py`)
-
-| Environment | Gravity | Target O₂ | Pressure | Airflow | Priority pillars |
-|-------------|---------|-----------|----------|---------|------------------|
-| Lunar Base | 0.16 g | 32% | 10.2 psi | 15 cm/s | Prevention, Detection |
-| Pressurized Rover | 0.16 g | 34% | 8.2 psi | 20 cm/s | Prevention, Suppression |
-| ISS | 0 g | 21% | 14.7 psi | 20 cm/s | Detection, Suppression |
-| Orion Capsule | 0 g | 26.5% | 10.2 psi | 15 cm/s | Prevention, Detection |
-
-## ML model (FLEX)
-
-Trained on cleaned PSI-69 data (methanol & heptane droplets, 12–34 % O₂, 0.7–3 atm).  
-Metrics are reported in `backend/ml/flex_metrics.json`.  
-Valid only inside the training range — statistical model, not a physical simulator.
-
-## Project structure
-
-```
-backend/          FastAPI + ranking + RAG + ML
-frontend/         React + Vite dashboard
-```
-
-## Disclaimer
-
-Independent student project for NASA Space Apps 2026.  
-Not affiliated with, endorsed by, or a product of NASA.  
-Rankings indicate relevance of existing research to a target environment; they are not fire-risk scores or safety certifications.
-
----
-
+Project Structure
+backend/          FastAPI server, ranking engine, RAG search, ML model
+frontend/         React dashboard
 Made with 🔥 by DynamicDuo
