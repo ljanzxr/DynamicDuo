@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-pypdf
-pandas
-scikit-learn
-joblib
-anthropic
